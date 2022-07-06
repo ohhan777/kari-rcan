@@ -3,13 +3,13 @@ import argparse
 import torch
 import torchvision
 from model.rcan import RCAN
-from div2k_dataset import DIV2KDataset
+from wv3tok3a_pairs_dataset import WV3ToK3APairsDataset
 import torch.nn as nn
 import torch.optim as optim
 import time
 from pathlib import Path
 import wandb
-from utils import denorm_tensor, get_tensor_ssim, get_tensor_psnr
+from utils import AverageMeter, denorm_tensor, get_tensor_ssim, get_tensor_psnr
 import tqdm
 import numpy as np
 from metrics import calculate_psnr, calculate_ssim
@@ -39,11 +39,11 @@ def train(opt):
 
     # wandb settings
     wandb.login()
-    wandb.init(project='kari-rcan')
+    wandb.init(project='kari-rcan-k3a-wv3')
 
     # dataset
-    train_dataset = DIV2KDataset('./data', opt.crop_size, opt.scale, train=True)
-    val_dataset = DIV2KDataset('./data', opt.crop_size, upscale_factor=opt.scale, train=False)
+    train_dataset = WV3ToK3APairsDataset('./data', opt.crop_size, opt.scale, train=True)
+    val_dataset = WV3ToK3APairsDataset('./data', opt.crop_size, upscale_factor=opt.scale, train=False)
 
     # dataloader
     num_workers = min([min([os.cpu_count(), 8]), opt.batch_size])
@@ -80,7 +80,7 @@ def train(opt):
     else:
         scaler = None
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2e5, gamma=0.5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5e3, gamma=0.75)
 
     # loading a weight file (if exists)
     if resume and os.path.exists(weight_file):
@@ -101,7 +101,7 @@ def train(opt):
         torch.save(state, weight_file)
         t0 = time.time()
         print('[validation for sample images]')
-        if epoch % 5 == 0:
+        if epoch % 20 == 0:
             psnr_val, ssim_val = val_one_epoch(val_dataloader, epoch, model, device, save_imgs=True, sample=True)
         else:
             psnr_val, ssim_val = val_one_epoch(val_dataloader, epoch, model, device, save_imgs=False, sample=True)
@@ -127,9 +127,11 @@ def train_one_epoch(dataloader, model, optimizer, l1_loss_fn, lr_scheduler, devi
         hr_imgs = hr_imgs.to(device)    
         lr_imgs = lr_imgs.to(device)
         optimizer.zero_grad()
+        avg_loss = AverageMeter()
         if scaler is None:
             sr_imgs = model(lr_imgs)            
-            loss = l1_loss_fn(sr_imgs, hr_imgs)    
+            loss = l1_loss_fn(sr_imgs, hr_imgs)
+              
             loss.backward()
             optimizer.step()
         else:
@@ -139,14 +141,14 @@ def train_one_epoch(dataloader, model, optimizer, l1_loss_fn, lr_scheduler, devi
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-
+        avg_loss.update(loss.item())  
         lr_scheduler.step()
 
         with torch.no_grad():
             if i % 5 == 0:
                 print('[%d/%d] loss: %.6f' % 
-                       (i+1, len(dataloader), loss.item()))
-                wandb.log({"loss": loss.item()})
+                       (i+1, len(dataloader), avg_loss.value()))
+                wandb.log({"loss": avg_loss.value()})
         
     
 def val_one_epoch(dataloader, epoch, model, device, save_imgs=True, sample=False):
@@ -199,8 +201,8 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int,
                         default=700, help='target epochs')
     parser.add_argument('--batch_size', type=int,
-                        default=16, help='batch size')
-    parser.add_argument('--name', default='edsr', help='name for the run')
+                        default=12, help='batch size')
+    parser.add_argument('--name', default='rcan', help='name for the run')
     parser.add_argument('--crop_size', default=512, type=int, help='training images crop size')
     parser.add_argument('--scale', default=2, type=int, choices=[2, 4, 8],
                     help='super resolution upscale factor')
@@ -208,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_resblocks', default=20, type=int, help='number of residual blocks')
     parser.add_argument('--n_feats', default=64, type=int, help='number of features')
     parser.add_argument('--rgb_range', default=255, type=int, help='number of residual blocks')
-    parser.add_argument('--n_colors', default=3, type=int, help='number of color channels')
+    parser.add_argument('--n_colors', default=1, type=int, help='number of color channels')
     parser.add_argument('--reduction', default=16, type=int, help='reduction factor')
     parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
     

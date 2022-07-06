@@ -51,8 +51,9 @@ def get_tensor_psnr(img1, img2, boader_crop=0, y_channel_only=False):
         img2 = img2[...,boader_crop:-boader_crop,boader_crop:-boader_crop]
 
     if y_channel_only:
-        img1 = (img1[...,0,:,:] * 65.481 + img1[...,1,:,:] * 128.553 + img1[...,2,:,:] * 24.966 + 16)/255.0
-        img2 = (img2[...,0,:,:] * 65.481 + img2[...,1,:,:] * 128.553 + img2[...,2,:,:] * 24.966 + 16)/255.0
+        if img1.shape[1] != 1:
+            img1 = (img1[...,0,:,:] * 65.481 + img1[...,1,:,:] * 128.553 + img1[...,2,:,:] * 24.966 + 16)/255.0
+            img2 = (img2[...,0,:,:] * 65.481 + img2[...,1,:,:] * 128.553 + img2[...,2,:,:] * 24.966 + 16)/255.0
         
     return 10* torch.log10(1.0/((img1-img2)**2).mean()).item()
 
@@ -74,8 +75,9 @@ def get_tensor_ssim(img1, img2, boader_crop=0, y_channel_only=False):
         img2 = img2[...,boader_crop:-boader_crop,boader_crop:-boader_crop]
         
     if y_channel_only:
-        img1 = (img1[...,0,:,:] * 65.481 + img1[...,1,:,:] * 128.553 + img1[...,2,:,:] * 24.966 + 16)/255.0
-        img2 = (img2[...,0,:,:] * 65.481 + img2[...,1,:,:] * 128.553 + img2[...,2,:,:] * 24.966 + 16)/255.0
+        if img1.shape[1] != 1:
+            img1 = (img1[...,0,:,:] * 65.481 + img1[...,1,:,:] * 128.553 + img1[...,2,:,:] * 24.966 + 16)/255.0
+            img2 = (img2[...,0,:,:] * 65.481 + img2[...,1,:,:] * 128.553 + img2[...,2,:,:] * 24.966 + 16)/255.0
     
     for _ in range(4 - img1.dim()):
         img1 = torch.unsqueeze(img1, 0)
@@ -146,3 +148,37 @@ def save_val_images(val_dataloader, G_AB, G_BA, epoch, device):
         
 
 
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.initialized = False
+        self.val = None
+        self.avg = None
+        self.sum = None
+        self.count = None
+
+    def initialize(self, val, weight):
+        self.val = val
+        self.avg = val
+        self.sum = val * weight
+        self.count = weight
+        self.initialized = True
+
+    def update(self, val, weight=1):
+        if not self.initialized:
+            self.initialize(val, weight)
+        else:
+            self.add(val, weight)
+
+    def add(self, val, weight):
+        self.val = val
+        self.sum += val * weight
+        self.count += weight
+        self.avg = self.sum / self.count
+
+    def value(self):
+        return self.val
+
+    def average(self):
+        return self.avg

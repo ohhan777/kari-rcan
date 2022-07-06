@@ -1,4 +1,5 @@
 from model import common
+#import common
 import torch.nn as nn
 
 def make_model(args, parent=False):
@@ -76,9 +77,11 @@ class RCAN(nn.Module):
         act = nn.ReLU(True)
         
         # RGB mean for DIV2K
-        rgb_mean = (0.4488, 0.4371, 0.4040)
-        rgb_std = (1.0, 1.0, 1.0)
-        self.sub_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std)
+        #rgb_mean = (0.4488, 0.4371, 0.4040)
+        rgb_mean = (0.5,)
+        #rgb_std = (1.0, 1.0, 1.0)
+        rgb_std = (1.0,)
+        self.sub_mean = common.MeanShift(args.n_colors, args.rgb_range, rgb_mean, rgb_std)
         
         # define head module
         modules_head = [conv(args.n_colors, n_feats, kernel_size)]
@@ -96,7 +99,7 @@ class RCAN(nn.Module):
             common.Upsampler(conv, scale, n_feats, act=False),
             conv(n_feats, args.n_colors, kernel_size)]
 
-        self.add_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std, 1)
+        self.add_mean = common.MeanShift(args.n_colors, args.rgb_range, rgb_mean, rgb_std, 1)
 
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
@@ -143,10 +146,10 @@ class RCAN(nn.Module):
 
 if __name__ == "__main__":
     from munch import Munch
-    args = Munch(n_resgroups=10, n_resblocks=20, n_feats=64, scale=4, rgb_range=255, n_colors=3, reduction=3)
+    args = Munch(n_resgroups=10, n_resblocks=20, n_feats=64, scale=4, rgb_range=255, n_colors=1, reduction=3)
     model = RCAN(args)
     import torch
-    hr_imgs = torch.rand(5, 3, 192, 192) * 255.0
+    hr_imgs = torch.rand(5, 1, 192, 192) * 255.0
     lr_imgs = torch.nn.functional.interpolate(hr_imgs, 48, mode='bicubic', align_corners=True)
     sr_imgs = model(lr_imgs)
     loss_fn = nn.L1Loss()
