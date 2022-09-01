@@ -4,7 +4,7 @@ import glob
 from pathlib import Path
 import numpy as np
 import cv2
-from utils import cv2_imwrite, denorm_tensor
+from utils2 import cv2_imwrite, denorm_tensor
 from torchvision.utils import save_image
 from PIL import Image
 import albumentations as A

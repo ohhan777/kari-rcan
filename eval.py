@@ -1,7 +1,7 @@
 import os
 import argparse
 import glob
-from utils import cv2_imwrite
+from utils2 import cv2_imwrite
 from munch import Munch
 import torch
 from model.rcan import RCAN
