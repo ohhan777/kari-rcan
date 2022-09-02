@@ -147,7 +147,7 @@ def run(weights=None,
                 filename = save_dir / f'val_batch{i}.png'
                 plot_images(hr_imgs, sr_imgs, filename)
 
-        callbacks.run('on_val_batch_end')
+        #callbacks.run('on_val_batch_end')
        
     # Metrics
     if training:

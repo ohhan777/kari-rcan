@@ -25,17 +25,19 @@ colors = Colors()  # create instance for 'from utils.plots import colors'
 
 def plot_images(hr_imgs, sr_imgs, filename):
     # Plot image grid with labels
-    if isinstance(hr_imgs, torch.Tensor):
-        hr_img = hr_imgs[0].cpu().float().numpy()   # img: (C, H, W)
-    if isinstance(sr_imgs, torch.Tensor):
-        sr_img = sr_imgs[0].cpu().float().numpy()   # img: (C, H, W)
+    size = hr_imgs.size(0)
+    for i in range(size):
+        if isinstance(hr_imgs, torch.Tensor):
+            hr_img = hr_imgs[i].cpu().float().numpy()   # img: (C, H, W)
+        if isinstance(sr_imgs, torch.Tensor):
+            sr_img = sr_imgs[i].cpu().float().numpy()   # img: (C, H, W)
 
-    hr_img = hr_img * 255.0
-    sr_img = sr_img * 255.0
+        hr_img = hr_img * 255.0
+        sr_img = sr_img * 255.0
 
-    hr_img = hr_img.astype(np.uint8)
-    sr_img = sr_img.astype(np.uint8)
-    
-    img = np.concatenate((hr_img, sr_img), axis=2)
+        hr_img = hr_img.astype(np.uint8)
+        sr_img = sr_img.astype(np.uint8)
+        
+        img = np.concatenate((hr_img, sr_img), axis=2)
 
-    cv2.imwrite(str(filename), img[0])
+        cv2.imwrite(str(filename).replace('.png', f'_{i}.png'), img[0])

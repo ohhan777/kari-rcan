@@ -109,17 +109,17 @@ def train(hyp, opt, device, callbacks):
         optimizer = SGD(model.parameters(), lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
 
     
-    # Scheduler
-    if opt.linear_lr:
-        lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
-    # if opt.cos_lr:
-    #     lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
-    else:
-        lf = lambda x: math.pow(1 -x / epochs, hyp['poly_exp'])    
-    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  
+    # # Scheduler
+    # if opt.linear_lr:
+    #     lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
+    # # if opt.cos_lr:
+    # #     lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
+    # else:
+    #     lf = lambda x: math.pow(1 -x / epochs, hyp['poly_exp'])    
+    # scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  
 
     # Resume (load checkpoint and apply it to the model)
-    start_epoch, best_fitness, best_mean_iou, best_epoch = 0, 0.0, 0.0, 0
+    start_epoch, best_fitness, best_psnr, best_epoch = 0, 0.0, 0.0, 0
     if resume:
         ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
         
@@ -135,6 +135,9 @@ def train(hyp, opt, device, callbacks):
         if ckpt['optimizer'] is not None:
             optimizer.load_state_dict(ckpt['optimizer'])
             best_fitness = ckpt['best_fitness']
+            #best_psnr = ckpt['best_psnr']
+            best_psnr = best_fitness
+            best_epoch = ckpt['best_epoch']
         
         start_epoch = ckpt['epoch'] + 1
         assert start_epoch > 0, f'{weights} training to {epochs} epochs is finished, nothing to resume.'        
@@ -165,7 +168,7 @@ def train(hyp, opt, device, callbacks):
     nw = max(round(hyp['warmup_epochs'] * nb), 100)  # number of warmup iterations, max(3 epochs, 100 iterations)
     last_opt_step = -1
     results = [0, 0, 0]   # mIOU, pix_acc, val loss
-    scheduler.last_epoch = start_epoch - 1  # do not move
+    #scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
     stopper = EarlyStopping(patience=opt.patience)
     callbacks.run('on_train_start')
@@ -190,15 +193,15 @@ def train(hyp, opt, device, callbacks):
             hr_imgs = hr_imgs.to(device, non_blocking=True)
 
             # Warmup
-            if ni <= nw:
-                xi = [0, nw]  # x interp
-                # compute_loss.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
-                accumulate = max(1, np.interp(ni, xi, [1, nbs / batch_size]).round())
-                for j, x in enumerate(optimizer.param_groups):
-                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
-                    x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
-                    if 'momentum' in x:
-                        x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
+            # if ni <= nw:
+            #     xi = [0, nw]  # x interp
+            #     # compute_loss.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
+            #     accumulate = max(1, np.interp(ni, xi, [1, nbs / batch_size]).round())
+            #     for j, x in enumerate(optimizer.param_groups):
+            #         # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+            #         x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+            #         if 'momentum' in x:
+            #             x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
 
             # Forward
             with amp.autocast(enabled=cuda):
@@ -236,7 +239,7 @@ def train(hyp, opt, device, callbacks):
         
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
-        scheduler.step()
+        #scheduler.step()
             
 
         #if is_main_process():
@@ -264,6 +267,7 @@ def train(hyp, opt, device, callbacks):
             if (not nosave) or final_epoch:  # if save
                 ckpt = {'epoch': epoch,
                         'best_fitness': best_fitness,
+                        'best_psnr' : best_psnr,
                         'best_epoch': best_epoch, 
                         'model': deepcopy(de_parallel(model)).half(), 
                         'optimizer': optimizer.state_dict(), 
