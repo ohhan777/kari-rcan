@@ -1,6 +1,10 @@
+from configparser import Interpolation
+import os
 import cv2
 import torch
 import numpy as np
+from osgeo import gdal
+import skimage
 
 class Colors:
     # Ultralytics color palette https://ultralytics.com/
@@ -41,3 +45,67 @@ def plot_images(hr_imgs, sr_imgs, filename):
         img = np.concatenate((hr_img, sr_img), axis=2)
 
         cv2.imwrite(str(filename).replace('.png', f'_{i}.png'), img[0])
+
+def save_images(lr_imgs, sr_imgs, save_dir, lr_filenames):
+    # Plot image grid with labels
+    size = lr_imgs.size(0)
+    for i in range(size):
+        if isinstance(lr_imgs, torch.Tensor):
+            lr_img = lr_imgs[i].cpu().float().numpy().squeeze(0)   # img: (H, W)
+        if isinstance(sr_imgs, torch.Tensor):
+            sr_img = sr_imgs[i].cpu().float().numpy().squeeze(0)   # img: (H, W)
+        lr_filename = lr_filenames[i]
+
+        lr_img = lr_img * 255.0
+        sr_img = sr_img * 255.0
+
+        lr_img = lr_img.astype(np.uint8)
+        h, w = sr_img.shape
+        lr_img = cv2.resize(lr_img, (h, w),  interpolation=cv2.INTER_CUBIC)
+        sr_img = sr_img.astype(np.uint8)
+
+        sr_img = skimage.exposure.match_histograms(sr_img, lr_img)
+        
+        img = np.concatenate((lr_img, sr_img), axis=1)
+        filename = os.path.join(save_dir, os.path.basename(lr_filename))
+        cv2.imwrite(str(filename).replace('.png', f'_{i}.png'), img)
+
+def save_tiffs(sr_imgs, save_dir, lr_filenames):
+    driver = gdal.GetDriverByName('GTiff')
+
+
+
+
+    
+    
+    
+    
+
+
+
+
+    size = sr_imgs.size(0)
+    for i in range(size):
+        if isinstance(sr_imgs, torch.Tensor):
+            sr_img = sr_imgs[i].cpu().float().numpy().squeeze(0)   # img: (H, W)
+        lr_filename = lr_filenames[i]
+        ds = gdal.Open(lr_filename)
+        geo_trans = ds.GetGeoTransform()
+        sr_img = sr_img * 16383.0
+        sr_img = sr_img.astype(np.uint16)
+        h, w = sr_img.shape
+        filename = os.path.join(save_dir, os.path.basename(lr_filename).replace('.tif', '_x2.tif'))
+        sr_ds = driver.Create(filename, xsize=w, ysize=h, bands=1, eType=gdal.GDT_UInt16)
+        sr_ds.GetRasterBand(1).WriteArray(sr_img)
+        sr_ds.SetProjection(ds.GetProjection())
+        sr_ds.SetMetadata(ds.GetMetadata())
+        sr_geo_trans = list(geo_trans)
+        sr_geo_trans[1]/=2
+        sr_geo_trans[5]/=2
+        sr_ds.SetGeoTransform(tuple(sr_geo_trans))
+        sr_ds.FlushCache()
+
+        
+        
+        
+        

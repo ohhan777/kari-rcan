@@ -5,11 +5,11 @@ up_scale: 2
 n_resgroups: 10
 n_resblocks: 20
 n_feats: 64
-#rgb_range: 16383
+#rgb_range: 1
 rgb_range: 255
 n_colors: 1
 reduction: 16
-lr0: 0.0001  # initial learning rate (SGD=1E-2, Adam=1E-3)
+lr0: 0.0001  # initial learning rate (SGD=1E-2, Adam=1E-3) 0.0001
 poly_exp: 0.9  # exponent of Poly scheduler (1-epoch/epochs)^poly_exp
 momentum: 0.9  # SGD momentum/Adam beta1
 weight_decay: 0.0005  # optimizer weight decay 5e-4

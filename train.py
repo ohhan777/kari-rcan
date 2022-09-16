@@ -76,7 +76,7 @@ def train(hyp, opt, device, callbacks):
 
     # Config
     cuda = device.type != 'cpu'    
-    init_seeds(1 + RANK)
+    init_seeds(2 + RANK)
     # TODO: data_dict
 
     # Model
@@ -84,10 +84,10 @@ def train(hyp, opt, device, callbacks):
     model = RCAN(hyp)
 
     # Dataloaders and Datasets
-    train_loader, train_dataset = create_dataloader('./data', is_train=True, batch_size=batch_size // WORLD_SIZE,
+    train_loader, train_dataset = create_dataloader('./data', task='train', batch_size=batch_size // WORLD_SIZE,
                                                     hyp=hyp, augment=True, cache=False, rank=LOCAL_RANK, workers=workers)
     
-    val_loader, _ = create_dataloader('./data', is_train=False, batch_size=batch_size // WORLD_SIZE,
+    val_loader, _ = create_dataloader('./data', task='val', batch_size=batch_size // WORLD_SIZE,
                                                     hyp=hyp, augment=False, cache=False, rank=LOCAL_RANK, workers=workers)
     nb = len(train_loader)  # number of batches
     loss_func = nn.L1Loss()
@@ -142,6 +142,10 @@ def train(hyp, opt, device, callbacks):
         start_epoch = ckpt['epoch'] + 1
         assert start_epoch > 0, f'{weights} training to {epochs} epochs is finished, nothing to resume.'        
         del ckpt, csd
+
+    
+
+
     
      # DP (Data-Parallel) mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
@@ -178,6 +182,27 @@ def train(hyp, opt, device, callbacks):
                     f"Starting training for {epochs} epochs...")
         
     for epoch in range(start_epoch, epochs):  # epoch ---------------------------------------------------------------
+        if epoch % 100 == 0:
+            new_lr = optimizer.param_groups[0]['lr']
+            if epoch == 1500:
+                new_lr = 0.00006
+            elif epoch == 2000:
+                new_lr = 0.00005
+            elif epoch == 2700:
+                new_lr = 0.00003
+            elif epoch == 2800:
+                new_lr = 0.000025
+            elif epoch == 2900:
+                new_lr = 0.00002
+            elif epoch == 3000:
+                new_lr = 0.000015
+            elif epoch == 3100:
+                new_lr = 0.00001
+            elif epoch == 3200:
+                new_lr = 0.000005
+            for g in optimizer.param_groups:
+                g['lr'] = new_lr 
+
         t1 = time.time()
         callbacks.run('on_train_epoch_start', epoch=epoch)
         model.train()
@@ -206,7 +231,7 @@ def train(hyp, opt, device, callbacks):
             # Forward
             with amp.autocast(enabled=cuda):
                 sr_imgs = model(lr_imgs)            
-                loss = loss_func(sr_imgs, hr_imgs)    
+                loss = loss_func(sr_imgs, hr_imgs)  
 
                 if RANK != -1:
                     dist.all_reduce(loss, op=dist.ReduceOp.SUM)
@@ -221,6 +246,25 @@ def train(hyp, opt, device, callbacks):
                 scaler.update()
                 optimizer.zero_grad()
                 last_opt_step = ni
+
+            
+            # sr_imgs = model(lr_imgs)            
+            # loss = loss_func(sr_imgs, hr_imgs)  
+
+            # if RANK != -1:
+            #     dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                
+
+            # # Backward
+            # loss.backward()
+
+            # # Optimize
+            # if ni - last_opt_step >= accumulate:
+            #     optimizer.step()  # optimizer.step
+            #     optimizer.zero_grad()
+            #     last_opt_step = ni
+
+            
 
             # Log
             if is_main_process() and i % 10 == 0:
@@ -281,7 +325,7 @@ def train(hyp, opt, device, callbacks):
                 if (epoch > 0) and (opt.save_period > 0) and (epoch % opt.save_period == 0):
                     torch.save(ckpt, w / f'epoch{epoch}.pt')
                 del ckpt
-                callbacks.run('on_model_save', last, epoch, final_epoch, best_fitness, fi)
+                #callbacks.run('on_model_save', last, epoch, final_epoch, best_fitness, fi)
             LOGGER.info(f'Epoch {epoch} completed in {(time.time() - t1):.3f} seconds.')
 
             # Stop Single-GPU

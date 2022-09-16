@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from utils.torch_utils import torch_distributed_zero_first
 from utils.augmentations import Albumentations, letterbox, random_perspective, augment_hsv, random_scale, random_crop
+from osgeo import gdal
 
 def get_hash(paths):
     # Returns a single hash value of a list of paths (files or dirs)
@@ -19,11 +20,11 @@ def get_hash(paths):
     return h.hexdigest()  # return hash
 
 
-def create_dataloader(path, is_train, batch_size, hyp=None, augment=False,
+def create_dataloader(path, task, batch_size, hyp=None, augment=False,
                       cache=False, pad=0.0, rank=-1, workers=8,
                       shuffle=True):
     #with torch_distributed_zero_first(rank):
-    dataset = LoadImagesAndLabels(path, is_train, batch_size, augment=augment,
+    dataset = LoadImagesAndLabels(path, task, batch_size, augment=augment,
                                       hyp=hyp, cache_imgs=cache)
     batch_size = min(batch_size, len(dataset))
     num_devices = torch.cuda.device_count()
@@ -37,21 +38,28 @@ def create_dataloader(path, is_train, batch_size, hyp=None, augment=False,
 class LoadImagesAndLabels(Dataset):
     cache_version = 0.1   # dataset labels *.cache version
 
-    def __init__(self, path, is_train=True, batch_size=16, augment=False, 
+    def __init__(self, path, task, batch_size=16, augment=False, 
                  hyp=None, cache_imgs=False):
 
         self.augment = augment
         self.hyp = hyp
-        self.train = is_train
+        self.train = True if task == 'train' else False
         self.crop_size = hyp['crop_size'] - ( hyp['crop_size'] % hyp['up_scale'])
         self.upscale_factor = hyp['up_scale']
         self.root = Path(path)
-        if is_train:
+        self.rgb_range = hyp['rgb_range']
+        self.task = task
+        if task == 'train':
             self.img_dir = self.root/Path('wv3_to_k3a_pairs/train/fake_lr')  
-        else:
-            self.img_dir = self.root/Path('wv3_to_k3a_pairs/val/fake_lr')  
+            #self.img_dir = self.root/Path('k3a_to_k3_pairs/train/fake_lr')  
+        elif task == 'val':
+            self.img_dir = self.root/Path('wv3_to_k3a_pairs/val/fake_lr')
+            #self.img_dir = self.root/Path('k3a_to_k3_pairs/val/fake_lr')  
+        elif task == 'test':
+            self.img_dir = self.root/Path('wv3_to_k3a_pairs/test')  
+            #self.img_dir = self.root/Path('k3a_to_k3_pairs/test')
 
-        self.img_files = sorted(glob.glob(os.path.join(str(self.img_dir), '*.png')))
+        self.img_files = sorted(glob.glob(os.path.join(str(self.img_dir), '*.tif')))
         self.img_size = len(self.img_files)
                    
     def __len__(self):
@@ -59,16 +67,24 @@ class LoadImagesAndLabels(Dataset):
 
     def __getitem__(self, idx):
         lr_img_file = self.img_files[idx]
-        hr_img_file = lr_img_file.replace('fake_lr', 'hr')
-        lr_img = cv2.imread(lr_img_file)#.astype(np.float32)
-        hr_img = cv2.imread(hr_img_file)#.astype(np.float32)
-        h, w = lr_img.shape[:2]
-        if min(h, w) < self.crop_size:
-            print("Error! The image is smaller than the crop size.", lr_img_file)
-            return None
-        # transforms (crop, resize for lr_img, normalization, and tensor conversion)
-        lr_img, hr_img = self.transforms(lr_img[:,:,0], hr_img[:,:,0], is_flip=self.train)  # tensor images in a range of [-1.0, 1.0]
-        return lr_img, hr_img
+        
+        if self.task in ['train', 'val']: 
+            lr_img = cv2.imread(lr_img_file, -1).astype(np.float32)
+            h, w = lr_img.shape[:2]
+            if min(h, w) < self.crop_size:
+                print("Error! The image is smaller than the crop size.", lr_img_file)
+                return None        
+            hr_img_file = lr_img_file.replace('fake_lr', 'hr')
+            hr_img = cv2.imread(hr_img_file, -1).astype(np.float32)
+            # transforms (crop, resize for lr_img, normalization, and tensor conversion)
+            lr_img, hr_img = self.transforms(lr_img, hr_img, is_flip=self.train) 
+            return lr_img, hr_img
+        if self.task == 'test':
+            ds = gdal.Open(lr_img_file)
+            lr_img = ds.GetRasterBand(1).ReadAsArray().astype(np.uint16)/64.0
+            lr_tensor = torch.from_numpy(lr_img).type(torch.FloatTensor).unsqueeze(0)
+            return lr_tensor, lr_img_file
+        
 
     def transforms(self, lr_img, hr_img, is_flip=False):
         # random crop with respect to high resolution image
@@ -81,11 +97,11 @@ class LoadImagesAndLabels(Dataset):
         y = y - (y % upscale_factor) if y % upscale_factor != 0 else y
         x = 0 if x < 0 else x
         y = 0 if y < 0 else y
-        hr_img = hr_img[y:y+crop_size, x:x+crop_size]
+        hr_img = hr_img[y:y+crop_size, x:x+crop_size]/64.0
         x = x//upscale_factor
         y = y//upscale_factor
         crop_size = crop_size//upscale_factor
-        lr_img = lr_img[y:y+crop_size, x:x+crop_size]
+        lr_img = lr_img[y:y+crop_size, x:x+crop_size]/64.0
         if is_flip:
             flip = np.random.choice(2) * 2 - 1
             lr_img = lr_img[:,::flip]
