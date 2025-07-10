@@ -1,5 +1,5 @@
 import os
-import pkg_resources as pkg
+from packaging import version
 import torch
 from threading import Thread
 from utils.plots import plot_images
@@ -13,7 +13,7 @@ try:
     import wandb
 
     assert hasattr(wandb, '__version__')  # verify package import not local dir
-    if pkg.parse_version(wandb.__version__) >= pkg.parse_version('0.12.2') and RANK in [0, -1]:
+    if version.parse(wandb.__version__) >= version.parse('0.12.2') and RANK in [0, -1]:
         try:
             wandb_login_success = wandb.login(timeout=30)
         except wandb.errors.UsageError:  # known non-TTY terminal issue

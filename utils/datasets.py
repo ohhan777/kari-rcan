@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from utils.torch_utils import torch_distributed_zero_first
 from utils.augmentations import Albumentations, letterbox, random_perspective, augment_hsv, random_scale, random_crop
-from osgeo import gdal
+import rasterio
 
 def get_hash(paths):
     # Returns a single hash value of a list of paths (files or dirs)
@@ -80,8 +80,8 @@ class LoadImagesAndLabels(Dataset):
             lr_img, hr_img = self.transforms(lr_img, hr_img, is_flip=self.train) 
             return lr_img, hr_img
         if self.task == 'test':
-            ds = gdal.Open(lr_img_file)
-            lr_img = ds.GetRasterBand(1).ReadAsArray().astype(np.uint16)/64.0
+            with rasterio.open(lr_img_file) as src:
+                lr_img = src.read(1).astype(np.uint16)/64.0
             lr_tensor = torch.from_numpy(lr_img).type(torch.FloatTensor).unsqueeze(0)
             return lr_tensor, lr_img_file
         

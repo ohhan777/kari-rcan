@@ -3,7 +3,8 @@ import os
 import cv2
 import torch
 import numpy as np
-from osgeo import gdal
+import rasterio
+from rasterio.transform import Affine
 import skimage
 
 class Colors:
@@ -71,39 +72,40 @@ def save_images(lr_imgs, sr_imgs, save_dir, lr_filenames):
         cv2.imwrite(str(filename).replace('.png', f'_{i}.png'), img)
 
 def save_tiffs(sr_imgs, save_dir, lr_filenames):
-    driver = gdal.GetDriverByName('GTiff')
-
-
-
-
-    
-    
-    
-    
-
-
-
-
     size = sr_imgs.size(0)
     for i in range(size):
         if isinstance(sr_imgs, torch.Tensor):
             sr_img = sr_imgs[i].cpu().float().numpy().squeeze(0)   # img: (H, W)
         lr_filename = lr_filenames[i]
-        ds = gdal.Open(lr_filename)
-        geo_trans = ds.GetGeoTransform()
+        
+        with rasterio.open(lr_filename) as src:
+            geo_trans = src.transform
+            crs = src.crs
+            metadata = src.meta
+            
         sr_img = sr_img * 16383.0
         sr_img = sr_img.astype(np.uint16)
         h, w = sr_img.shape
         filename = os.path.join(save_dir, os.path.basename(lr_filename).replace('.tif', '_x2.tif'))
-        sr_ds = driver.Create(filename, xsize=w, ysize=h, bands=1, eType=gdal.GDT_UInt16)
-        sr_ds.GetRasterBand(1).WriteArray(sr_img)
-        sr_ds.SetProjection(ds.GetProjection())
-        sr_ds.SetMetadata(ds.GetMetadata())
-        sr_geo_trans = list(geo_trans)
-        sr_geo_trans[1]/=2
-        sr_geo_trans[5]/=2
-        sr_ds.SetGeoTransform(tuple(sr_geo_trans))
-        sr_ds.FlushCache()
+        
+        # Create new geotransform with 2x resolution
+        sr_geo_trans = Affine(geo_trans.a / 2, geo_trans.b, geo_trans.c,
+                             geo_trans.d, geo_trans.e / 2, geo_trans.f)
+        
+        # Update metadata for the new file
+        new_metadata = metadata.copy()
+        new_metadata.update({
+            'driver': 'GTiff',
+            'height': h,
+            'width': w,
+            'count': 1,
+            'dtype': sr_img.dtype,
+            'transform': sr_geo_trans,
+            'crs': crs
+        })
+        
+        with rasterio.open(filename, 'w', **new_metadata) as dst:
+            dst.write(sr_img, 1)
 
         
         
